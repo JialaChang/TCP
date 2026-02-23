@@ -10,7 +10,6 @@ def handle_client(conn, addr):
     if current_conn:
         try:
             current_conn.close()
-
         except:
             pass
     
@@ -42,10 +41,8 @@ def handle_client(conn, addr):
             if not indata:  # indata 為空代表斷線
                 break
             print(f"\n[Receive from {addr}] : {indata.decode(errors='ignore')}")
-
     except:
         pass
-
     finally:
         print("\nDisconnected...")
         current_conn = None
