@@ -1,90 +1,99 @@
-import tkinter as tk
-from tkinter import scrolledtext
+import dearpygui.dearpygui as dpg
 import socket
 import threading
+import platform
+import os
+
 
 class Network:
 
-    def __init__(self, root):
+    def __init__(self):
 
-        self.root = root
-        self.root.title("NET")
         self.s = None
         self.is_connected = False
+        self.target_ip = ""
+        self.target_port = ""
+
+        self.setup_gui()
+
+
+    def setup_gui(self):
+        """建立視窗 UI """
+
+        dpg.create_context()
+
+        # 文字設定
+        with dpg.font_registry():
+            font_path = ""
+            if platform.system() == "Windows":
+                font_path = "C:/Windows/Fonts/msjh.ttc"  # 微軟正黑體
+
+            elif platform.system() == "Darwin":
+                font_path = "/System/Library/Fonts/PingFang.ttc" # Mac 蘋方體
+
+            if font_path and os.path.exists(font_path):
+                with dpg.font(font_path, 18) as default_font:
+                    dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
+                    dpg.add_font_range_hint(dpg.mvFontRangeHint_Chinese_Full)
+
+                dpg.bind_font(default_font)
+
+        # 建立主視窗 UI, DearPyGui 底層是 C++ 因此不用 (用self) 儲存 Python 物件
+        with dpg.window(tag="primary_window"):
+
+            # 水平輸入欄
+            with dpg.group(horizontal=True):
+                dpg.add_text("IP :")
+                dpg.add_input_text(tag="entry_ip", width=150)
+
+                dpg.add_text("port :")
+                dpg.add_input_text(tag="entry_port", width=80)
+
+                dpg.add_button(label="Set", tag="btn_setip", callback=self.save_ip) # callback 會傳入 sender, app_data, user_data 三個參數
+
+                dpg.add_text(" " * 10)  # 用空格做間距
+                dpg.add_button(label="Connect", tag="btn_connect", callback=self.toggle_connection)
+
+            # 滾動窗
+            with dpg.child_window(tag="log_window", width=-1, height=-1):    # 寬高設 -1 填滿剩下的空間
+                pass
         
+        # 建立視窗
+        dpg.create_viewport(title="Network", width=800, height=500)
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
 
-        self.target_ip = tk.StringVar(value="")
-        self.target_port = tk.StringVar(value="")
+        dpg.set_primary_window("primary_window", True)
+        dpg.start_dearpygui()
+        dpg.destroy_context()
 
-        self.setup_window()
-        self.create_wingets()
 
-    def setup_window(self):
-        """視窗大小與位置"""
-        
-        window_width = self.root.winfo_screenwidth()
-        window_height = self.root.winfo_screenheight()
-
-        width = int(window_width * 0.5)
-        height = int(window_height * 0.5)
-        left = int((window_width - width) / 2)
-        top = int((window_height - height) / 2)
-
-        self.root.geometry(f'{width}x{height}+{left}+{top}')
-
-    def create_wingets(self):
-        """"建立物件"""
-
-        # ip輸入
-        self.frame_ip = tk.Frame(self.root)
-        self.frame_ip.grid(row=0, column=0, columnspan=3, sticky='w')
-
-        tk.Label(self.frame_ip, text="IP : ").grid(row=0, column=0, padx=10, pady=10)
-
-        self.entry_ip = tk.Entry(self.frame_ip, width=16)
-        self.entry_ip.grid(row=0, column=1, padx=10, pady=10)
-
-        tk.Label(self.frame_ip, text="port : ").grid(row=0, column=2, padx=10, pady=10)
-
-        self.entry_port = tk.Entry(self.frame_ip, width=8)
-        self.entry_port.grid(row=0, column=3, padx=10, pady=10)
-
-        self.btn_saveip = tk.Button(self.frame_ip, text="設定", command=self.save_ip)
-        self.btn_saveip.grid(row=0, column=4, padx=10, pady=10)
-
-        # 滾動窗
-        self.log_window = scrolledtext.ScrolledText(self.root, width=80, height=15, font=("Consolas", 10), state='disabled')
-        self.log_window.grid(row=1, column=0, columnspan=3, padx=10, pady=10)
-
-        # 開始&暫停按鈕
-        self.btn_connect = tk.Button(self.root, text="開始連線", command=self.toggle_connection)
-        self.btn_connect.grid(row=0, column=2, padx=10, pady=10)
-
-    def save_ip(self):
+    def save_ip(self, *args):   # args 接收傳來的其他參數
         """儲存IP及port"""
 
-        self.target_ip.set(self.entry_ip.get()) # entry_ip 是物件 -> 用 get() 取完才是字串或數值
-        self.target_port.set(self.entry_port.get())
+        self.target_ip = dpg.get_value("entry_ip")
+        self.target_port = dpg.get_value("entry_port")
+        self.output_message(f"[System] : IP saved -- {self.target_ip}:{self.target_port}")
 
-        self.output_message(f"[System]: IP saved -- {self.target_ip.get()}:{self.target_port.get()}")
 
     def establish_connect(self):
         """建立連線"""
 
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # AF_INET : IPv4 協定 ; SOCK_STREAM : TCP 協定
-            self.s.connect((self.target_ip.get(), int(self.target_port.get())))
-            self.output_message("[System]: Connect sucessfully")
+            self.s.connect((self.target_ip, int(self.target_port)))
+            self.output_message("[System] : Connect sucessfully")
             self.is_connected = True
-            self.btn_connect.config(text="中斷連線")
+            dpg.set_item_label("btn_connect", "Disconnect")
 
             # 用threading建立多執行緒
             t = threading.Thread(target=self.receive_data, daemon=True) # daemon=True -> 主執行緒被關閉時，副執行緒也同樣會被關閉 
             t.start()
             
         except Exception as e:
-            self.output_message(f"[System]: Connect failed -- {e}")
+            self.output_message(f"[System] : Connect failed -- {e}")
             self.s.close()
+
 
     def stop_connect(self):
         """中斷連線"""
@@ -94,22 +103,22 @@ class Network:
             try:
                 self.s.shutdown(socket.SHUT_RDWR)
                 self.s.close()
-            
+
             except:
                 pass
         
-        self.btn_connect.config(text="開始連線")
-        self.output_message("[System]: Disconnected")
+        dpg.set_item_label("btn_connect", "Connect")        
+        self.output_message("[System] : Disconnected")
 
 
     def toggle_connection(self):
         """切換連線按鈕"""
         if not self.is_connected:
-            self.output_message("[System]: Trying to connect...")
+            self.output_message("[System] : Trying to connect...")
             self.establish_connect()
-
         else:
             self.stop_connect()
+
 
     def receive_data(self):
         """接收資料"""
@@ -118,7 +127,7 @@ class Network:
             try:      
                 self.data = self.s.recv(1024)
                 if not self.data:
-                    self.output_message("[System]: Sever disconnect")
+                    self.output_message("[System] : Sever disconnect")
                     break
 
                 hex_data = self.data.hex(' ').upper()
@@ -126,22 +135,23 @@ class Network:
 
             except Exception as e:
                 if self.is_connected:
-                    self.output_message(f"[System]: Error -- {e}")
+                    self.output_message(f"[System] : Error -- {e}")
                 break
 
         self.is_connected = False
-        self.btn_connect.config(text="開始連線")
+        dpg.set_item_label("btn_connect", "Connect")        
+
 
     def output_message(self, message):
-        """"滾動窗輸出訊息"""
+        """"滾動窗輸出訊息 & 整理頁面"""
 
-        self.log_window.config(state='normal')
-        self.log_window.insert('end', f"{message}\n")
-        self.log_window.config(state='disabled')
-        self.log_window.see('end')      
- 
+        dpg.add_text(message, parent="log_window")
+        dpg.set_y_scroll("log_window", 999)
+
+        if len(dpg.get_item_children("log_window", 1)) > 500:
+            dpg.delete_item(dpg.get_item_children("log_window", 1)[0]) # [0] -> 最上面的一行
+        
+
 # 執行視窗
 if __name__ == "__main__":
-    root = tk.Tk()
-    Network(root)
-    root.mainloop()
+    Network()
